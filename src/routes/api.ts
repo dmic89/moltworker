@@ -179,6 +179,29 @@ api.post('/devices/approve-all', async (c) => {
   }
 });
 
+// GET /api/storage - Get R2 storage status
+api.get('/storage', async (c) => {
+  const hasCredentials = !!(
+    c.env.R2_ACCESS_KEY_ID && 
+    c.env.R2_SECRET_ACCESS_KEY && 
+    c.env.CF_ACCOUNT_ID
+  );
+
+  // Check which credentials are missing
+  const missing: string[] = [];
+  if (!c.env.R2_ACCESS_KEY_ID) missing.push('R2_ACCESS_KEY_ID');
+  if (!c.env.R2_SECRET_ACCESS_KEY) missing.push('R2_SECRET_ACCESS_KEY');
+  if (!c.env.CF_ACCOUNT_ID) missing.push('CF_ACCOUNT_ID');
+
+  return c.json({
+    configured: hasCredentials,
+    missing: missing.length > 0 ? missing : undefined,
+    message: hasCredentials 
+      ? 'R2 storage is configured. Your data will persist across container restarts.'
+      : 'R2 storage is not configured. Paired devices and conversations will be lost when the container restarts.',
+  });
+});
+
 // POST /api/gateway/restart - Kill the current gateway and start a new one
 api.post('/gateway/restart', async (c) => {
   const sandbox = c.get('sandbox');

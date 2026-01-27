@@ -4,10 +4,12 @@ import {
   approveDevice,
   approveAllDevices,
   restartGateway,
+  getStorageStatus,
   AuthError,
   type PendingDevice,
   type PairedDevice,
   type DeviceListResponse,
+  type StorageStatusResponse,
 } from '../api'
 import './DevicesPage.css'
 
@@ -19,6 +21,7 @@ function ButtonSpinner() {
 export default function DevicesPage() {
   const [pending, setPending] = useState<PendingDevice[]>([])
   const [paired, setPaired] = useState<PairedDevice[]>([])
+  const [storageStatus, setStorageStatus] = useState<StorageStatusResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionInProgress, setActionInProgress] = useState<string | null>(null)
@@ -47,9 +50,20 @@ export default function DevicesPage() {
     }
   }, [])
 
+  const fetchStorageStatus = useCallback(async () => {
+    try {
+      const status = await getStorageStatus()
+      setStorageStatus(status)
+    } catch (err) {
+      // Don't show error for storage status - it's not critical
+      console.error('Failed to fetch storage status:', err)
+    }
+  }, [])
+
   useEffect(() => {
     fetchDevices()
-  }, [fetchDevices])
+    fetchStorageStatus()
+  }, [fetchDevices, fetchStorageStatus])
 
   const handleApprove = async (requestId: string) => {
     setActionInProgress(requestId)
@@ -132,6 +146,29 @@ export default function DevicesPage() {
           <button onClick={() => setError(null)} className="dismiss-btn">
             Dismiss
           </button>
+        </div>
+      )}
+
+      {storageStatus && !storageStatus.configured && (
+        <div className="warning-banner">
+          <div className="warning-content">
+            <strong>R2 Storage Not Configured</strong>
+            <p>
+              Paired devices and conversations will be lost when the container restarts.
+              To enable persistent storage, configure R2 credentials.
+            </p>
+            {storageStatus.missing && (
+              <p className="missing-secrets">
+                Missing: {storageStatus.missing.join(', ')}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {storageStatus?.configured && (
+        <div className="success-banner">
+          <span>R2 storage is configured. Your data will persist across container restarts.</span>
         </div>
       )}
 

@@ -115,3 +115,13 @@ export async function restartGateway(): Promise<RestartGatewayResponse> {
     method: 'POST',
   });
 }
+
+export interface StorageStatusResponse {
+  configured: boolean;
+  missing?: string[];
+  message: string;
+}
+
+export async function getStorageStatus(): Promise<StorageStatusResponse> {
+  return apiRequest<StorageStatusResponse>('/storage');
+}
