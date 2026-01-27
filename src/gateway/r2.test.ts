@@ -13,18 +13,39 @@ function createEnv(overrides: Partial<ClawdbotEnv> = {}): ClawdbotEnv {
   };
 }
 
+// Helper to create a mock process
+function createMockProcess(stdout: string = '', exitCode: number = 0) {
+  return {
+    status: 'completed',
+    exitCode,
+    getLogs: vi.fn().mockResolvedValue({ stdout, stderr: '' }),
+  };
+}
+
 // Helper to create a mock sandbox
-function createMockSandbox(): { sandbox: Sandbox; mountBucketMock: ReturnType<typeof vi.fn> } {
+function createMockSandbox(options: { mounted?: boolean } = {}): { 
+  sandbox: Sandbox; 
+  mountBucketMock: ReturnType<typeof vi.fn>;
+  startProcessMock: ReturnType<typeof vi.fn>;
+} {
   const mountBucketMock = vi.fn().mockResolvedValue(undefined);
+  
+  // Default: return empty stdout (not mounted), unless mounted: true
+  const startProcessMock = vi.fn().mockResolvedValue(
+    options.mounted 
+      ? createMockProcess('s3fs on /data/clawdbot type fuse.s3fs (rw,nosuid,nodev,relatime,user_id=0,group_id=0)\n')
+      : createMockProcess('')
+  );
+  
   const sandbox = {
     mountBucket: mountBucketMock,
     listProcesses: vi.fn(),
-    startProcess: vi.fn(),
+    startProcess: startProcessMock,
     containerFetch: vi.fn(),
     wsConnect: vi.fn(),
   } as unknown as Sandbox;
 
-  return { sandbox, mountBucketMock };
+  return { sandbox, mountBucketMock, startProcessMock };
 }
 
 describe('mountR2Storage', () => {
@@ -81,8 +102,8 @@ describe('mountR2Storage', () => {
     );
   });
 
-  it('mounts R2 bucket when all credentials are provided', async () => {
-    const { sandbox, mountBucketMock } = createMockSandbox();
+  it('mounts R2 bucket when all credentials are provided and not already mounted', async () => {
+    const { sandbox, mountBucketMock } = createMockSandbox({ mounted: false });
     const env = createEnv({
       R2_ACCESS_KEY_ID: 'key123',
       R2_SECRET_ACCESS_KEY: 'secret',
@@ -105,9 +126,13 @@ describe('mountR2Storage', () => {
     );
   });
 
-  it('returns false when mountBucket throws an error', async () => {
-    const { sandbox, mountBucketMock } = createMockSandbox();
+  it('returns false when mountBucket throws an error and mount check fails', async () => {
+    const { sandbox, mountBucketMock, startProcessMock } = createMockSandbox({ mounted: false });
     mountBucketMock.mockRejectedValue(new Error('Mount failed'));
+    // After mount error, check if mounted - return false
+    startProcessMock
+      .mockResolvedValueOnce(createMockProcess('')) // first check: not mounted
+      .mockResolvedValueOnce(createMockProcess('')); // check after error: still not mounted
     
     const env = createEnv({
       R2_ACCESS_KEY_ID: 'key123',
@@ -124,9 +149,8 @@ describe('mountR2Storage', () => {
     );
   });
 
-  it('returns true when bucket is already mounted', async () => {
-    const { sandbox, mountBucketMock } = createMockSandbox();
-    mountBucketMock.mockRejectedValue(new Error('InvalidMountConfigError: Mount path "/data/clawdbot" is already in use by bucket "clawdbot-data"'));
+  it('returns true immediately when bucket is already mounted', async () => {
+    const { sandbox, mountBucketMock } = createMockSandbox({ mounted: true });
     
     const env = createEnv({
       R2_ACCESS_KEY_ID: 'key123',
@@ -137,6 +161,8 @@ describe('mountR2Storage', () => {
     const result = await mountR2Storage(sandbox, env);
 
     expect(result).toBe(true);
+    // Should not try to mount since already mounted
+    expect(mountBucketMock).not.toHaveBeenCalled();
     expect(console.log).toHaveBeenCalledWith(
       'R2 bucket already mounted at',
       '/data/clawdbot'
@@ -144,7 +170,7 @@ describe('mountR2Storage', () => {
   });
 
   it('logs success message when mounted successfully', async () => {
-    const { sandbox } = createMockSandbox();
+    const { sandbox } = createMockSandbox({ mounted: false });
     const env = createEnv({
       R2_ACCESS_KEY_ID: 'key123',
       R2_SECRET_ACCESS_KEY: 'secret',
@@ -158,16 +184,17 @@ describe('mountR2Storage', () => {
     );
   });
 
-  it('clears directory and retries when mount fails due to non-empty directory', async () => {
-    const { sandbox, mountBucketMock } = createMockSandbox();
-    const startProcessMock = sandbox.startProcess as ReturnType<typeof vi.fn>;
+  it('returns true if mount fails but check shows it is actually mounted', async () => {
+    const { sandbox, mountBucketMock, startProcessMock } = createMockSandbox();
     
-    // First mount fails with "not empty", second succeeds
-    mountBucketMock
-      .mockRejectedValueOnce(new Error('S3FSMountError: S3FS mount failed: s3fs: MOUNTPOINT directory /data/clawdbot is not empty'))
-      .mockResolvedValueOnce(undefined);
+    // First check: not mounted
+    // Mount throws an error
+    // Second check: actually is mounted (race condition resolved)
+    startProcessMock
+      .mockResolvedValueOnce(createMockProcess('')) // first check: not mounted
+      .mockResolvedValueOnce(createMockProcess('s3fs on /data/clawdbot type fuse.s3fs\n')); // check after error: mounted!
     
-    startProcessMock.mockResolvedValue({ status: 'completed' });
+    mountBucketMock.mockRejectedValue(new Error('Some transient error'));
     
     const env = createEnv({
       R2_ACCESS_KEY_ID: 'key123',
@@ -178,7 +205,6 @@ describe('mountR2Storage', () => {
     const result = await mountR2Storage(sandbox, env);
 
     expect(result).toBe(true);
-    expect(startProcessMock).toHaveBeenCalledWith('rm -rf /data/clawdbot/*');
-    expect(mountBucketMock).toHaveBeenCalledTimes(2);
+    expect(console.log).toHaveBeenCalledWith('R2 bucket is mounted despite error');
   });
 });

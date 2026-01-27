@@ -225,3 +225,15 @@ npx wrangler secret list
 ```
 
 Enable debug routes with `DEBUG_ROUTES=true` and check `/debug/processes`.
+
+## R2 Storage Notes
+
+R2 is mounted via s3fs at `/data/clawdbot`. Important gotchas:
+
+- **rsync compatibility**: Use `rsync -r --no-times` instead of `rsync -a`. s3fs doesn't support setting timestamps, which causes rsync to fail with "Input/output error".
+
+- **Mount checking**: Don't rely on `sandbox.mountBucket()` error messages to detect "already mounted" state. Instead, check `mount | grep s3fs` to verify the mount status.
+
+- **Never delete R2 data**: The mount directory `/data/clawdbot` IS the R2 bucket. Running `rm -rf /data/clawdbot/*` will DELETE your backup data. Always check mount status before any destructive operations.
+
+- **Process status**: The sandbox API's `proc.status` may not update immediately after a process completes. Instead of checking `proc.status === 'completed'`, verify success by checking for expected output (e.g., timestamp file exists after sync).

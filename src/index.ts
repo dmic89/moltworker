@@ -157,7 +157,8 @@ async function scheduled(
   // Run rsync to backup config to R2
   // Exclude lock files, logs, and temp files
   // Write timestamp to .last-sync for tracking
-  const syncCmd = `rsync -a --delete --exclude='*.lock' --exclude='*.log' --exclude='*.tmp' /root/.clawdbot/ ${R2_MOUNT_PATH}/ && date -Iseconds > ${R2_MOUNT_PATH}/.last-sync`;
+  // Note: Use --no-times because s3fs doesn't support setting timestamps
+  const syncCmd = `rsync -r --no-times --delete --exclude='*.lock' --exclude='*.log' --exclude='*.tmp' /root/.clawdbot/ ${R2_MOUNT_PATH}/ && date -Iseconds > ${R2_MOUNT_PATH}/.last-sync`;
   
   try {
     console.log('[cron] Starting backup sync to R2...');
@@ -170,10 +171,17 @@ async function scheduled(
       attempts++;
     }
     
-    const logs = await proc.getLogs();
-    if (proc.status === 'completed' || proc.exitCode === 0) {
-      console.log('[cron] Backup sync completed successfully');
+    // Check for success by reading the timestamp file
+    // (process status may not update reliably)
+    const checkProc = await sandbox.startProcess(`cat ${R2_MOUNT_PATH}/.last-sync`);
+    await new Promise(r => setTimeout(r, 1000));
+    const checkLogs = await checkProc.getLogs();
+    const timestamp = checkLogs.stdout?.trim();
+    
+    if (timestamp && timestamp.match(/^\d{4}-\d{2}-\d{2}/)) {
+      console.log('[cron] Backup sync completed successfully at', timestamp);
     } else {
+      const logs = await proc.getLogs();
       console.error('[cron] Backup sync failed:', logs.stderr || logs.stdout);
     }
   } catch (error) {

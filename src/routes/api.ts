@@ -273,30 +273,34 @@ admin.post('/storage/sync', async (c) => {
     }
 
     // Run rsync to backup config to R2
-    const syncCmd = `rsync -a --delete --exclude='*.lock' --exclude='*.log' --exclude='*.tmp' /root/.clawdbot/ ${R2_MOUNT_PATH}/ && date -Iseconds > ${R2_MOUNT_PATH}/.last-sync`;
+    // Note: Use --no-times because s3fs doesn't support setting timestamps
+    const syncCmd = `rsync -r --no-times --delete --exclude='*.lock' --exclude='*.log' --exclude='*.tmp' /root/.clawdbot/ ${R2_MOUNT_PATH}/ && date -Iseconds > ${R2_MOUNT_PATH}/.last-sync`;
     
     const proc = await sandbox.startProcess(syncCmd);
     await waitForProcess(proc, 30000); // 30 second timeout for sync
 
-    const logs = await proc.getLogs();
+    // The sync command writes a timestamp file on success.
+    // Check for that file to verify success, since process status
+    // may not update immediately in the sandbox API.
+    const timestampProc = await sandbox.startProcess(`cat ${R2_MOUNT_PATH}/.last-sync`);
+    await waitForProcess(timestampProc, 5000);
+    const timestampLogs = await timestampProc.getLogs();
+    const lastSync = timestampLogs.stdout?.trim();
     
-    if (proc.status === 'completed' || proc.exitCode === 0) {
-      // Read the timestamp we just wrote
-      const timestampProc = await sandbox.startProcess(`cat ${R2_MOUNT_PATH}/.last-sync`);
-      await waitForProcess(timestampProc, 5000);
-      const timestampLogs = await timestampProc.getLogs();
-      const lastSync = timestampLogs.stdout?.trim() || new Date().toISOString();
-
+    // If we got a timestamp, the sync succeeded
+    if (lastSync && lastSync.match(/^\d{4}-\d{2}-\d{2}/)) {
       return c.json({
         success: true,
         message: 'Sync completed successfully',
         lastSync,
       });
     } else {
+      // No timestamp means the sync failed
+      const logs = await proc.getLogs();
       return c.json({
         success: false,
         error: 'Sync failed',
-        details: logs.stderr || logs.stdout,
+        details: logs.stderr || logs.stdout || 'No timestamp file created',
       }, 500);
     }
   } catch (error) {
