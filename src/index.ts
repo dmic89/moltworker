@@ -36,7 +36,7 @@ import configErrorHtml from './assets/config-error.html';
  */
 function transformErrorMessage(message: string, host: string): string {
   if (message.includes('gateway token missing') || message.includes('gateway token mismatch')) {
-    return `Invalid or missing token. Visit https://${host}?token={REPLACE_WITH_YOUR_TOKEN}`;
+    return `Gateway token error. Check that MOLTBOT_GATEWAY_TOKEN is set correctly (wrangler secret put MOLTBOT_GATEWAY_TOKEN)`;
   }
   
   if (message.includes('pairing required')) {
@@ -55,17 +55,10 @@ export { Sandbox };
 function validateRequiredEnv(env: MoltbotEnv): string[] {
   const missing: string[] = [];
 
-  if (!env.MOLTBOT_GATEWAY_TOKEN) {
-    missing.push('MOLTBOT_GATEWAY_TOKEN');
-  }
-
-  if (!env.CF_ACCESS_TEAM_DOMAIN) {
-    missing.push('CF_ACCESS_TEAM_DOMAIN');
-  }
-
-  if (!env.CF_ACCESS_AUD) {
-    missing.push('CF_ACCESS_AUD');
-  }
+  // MOLTBOT_GATEWAY_TOKEN is optional - if unset, gateway uses device pairing.
+  // Cloudflare Access is OPTIONAL and should not block the core gateway UI.
+  // If configured, it can be used to protect the worker-hosted admin UI (/ _admin)
+  // and admin API endpoints.
 
   // Check for AI Gateway or direct Anthropic configuration
   if (env.AI_GATEWAY_API_KEY) {
@@ -181,15 +174,22 @@ app.use('*', async (c, next) => {
   return next();
 });
 
-// Middleware: Cloudflare Access authentication for protected routes
-app.use('*', async (c, next) => {
-  // Determine response type based on Accept header
-  const acceptsHtml = c.req.header('Accept')?.includes('text/html');
-  const middleware = createAccessMiddleware({ 
-    type: acceptsHtml ? 'html' : 'json',
-    redirectOnMissing: acceptsHtml 
+// Middleware: Cloudflare Access authentication ONLY for the worker-hosted Admin UI.
+// IMPORTANT: Do not protect the gateway proxy catch-all with CF Access; that breaks
+// the main web UI at "/" and the WebSocket endpoint used by the gateway.
+//
+// Note: /_admin/assets/* is public so the SPA can load JS/CSS for login/redirect flows.
+app.use('/_admin/*', async (c, next) => {
+  const url = new URL(c.req.url);
+  if (url.pathname.startsWith('/_admin/assets/')) {
+    return next();
+  }
+
+  const middleware = createAccessMiddleware({
+    type: 'html',
+    redirectOnMissing: true,
   });
-  
+
   return middleware(c, next);
 });
 
