@@ -37,6 +37,11 @@ export interface MoltbotEnv {
   BROWSER?: Fetcher;
   CDP_SECRET?: string; // Shared secret for CDP endpoint authentication
   WORKER_URL?: string; // Public URL of the worker (for CDP endpoint)
+  // GitHub + Linear integration
+  GITHUB_TOKEN?: string; // GitHub PAT (fine-grained) for gh CLI
+  LINEAR_API_KEY?: string; // Linear API Key for GraphQL API
+  // Brave Search API
+  BRAVE_API_KEY?: string; // Brave Search API key for web search
 }
 
 /**

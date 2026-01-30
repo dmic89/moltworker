@@ -338,12 +338,30 @@ cdp.get('/json', async (c) => {
 /**
  * Initialize a CDP session for a WebSocket connection
  */
+async function launchBrowserWithRetry(binding: Fetcher, maxRetries = 3): Promise<Browser> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await puppeteer.launch(binding);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isSessionConflict = msg.includes('existing session') || msg.includes('not ready yet');
+      if (isSessionConflict && attempt < maxRetries) {
+        console.log(`[CDP] Session conflict on attempt ${attempt}/${maxRetries}, retrying in ${attempt * 2}s...`);
+        await new Promise(r => setTimeout(r, attempt * 2000));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('Browser launch failed after all retries');
+}
+
 async function initCDPSession(ws: WebSocket, env: MoltbotEnv): Promise<void> {
   let session: CDPSession | null = null;
 
   try {
-    // Launch browser
-    const browser = await puppeteer.launch(env.BROWSER!);
+    // Launch browser with retry for stale session conflicts
+    const browser = await launchBrowserWithRetry(env.BROWSER!);
     const page = await browser.newPage();
     const targetId = crypto.randomUUID();
 
