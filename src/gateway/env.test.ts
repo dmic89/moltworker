@@ -26,6 +26,17 @@ describe('buildEnvVars', () => {
     expect(result.OPENAI_API_KEY).toBeUndefined();
   });
 
+  it('normalizes AI_GATEWAY_BASE_URL (trailing slash) for Anthropic gateway', () => {
+    const env = createMockEnv({
+      AI_GATEWAY_API_KEY: 'sk-gateway-key',
+      AI_GATEWAY_BASE_URL: 'https://gateway.ai.cloudflare.com/v1/123/my-gw/anthropic/',
+    });
+    const result = buildEnvVars(env);
+    expect(result.ANTHROPIC_API_KEY).toBe('sk-gateway-key');
+    expect(result.AI_GATEWAY_BASE_URL).toBe('https://gateway.ai.cloudflare.com/v1/123/my-gw/anthropic');
+    expect(result.ANTHROPIC_BASE_URL).toBe('https://gateway.ai.cloudflare.com/v1/123/my-gw/anthropic');
+  });
+
   it('maps AI_GATEWAY_API_KEY to OPENAI_API_KEY for OpenAI gateway', () => {
     const env = createMockEnv({
       AI_GATEWAY_API_KEY: 'sk-gateway-key',
@@ -35,6 +46,17 @@ describe('buildEnvVars', () => {
     expect(result.OPENAI_API_KEY).toBe('sk-gateway-key');
     expect(result.OPENAI_BASE_URL).toBe('https://gateway.ai.cloudflare.com/v1/123/my-gw/openai');
     expect(result.ANTHROPIC_API_KEY).toBeUndefined();
+  });
+
+  it('normalizes AI_GATEWAY_BASE_URL (trailing slash) for OpenAI gateway', () => {
+    const env = createMockEnv({
+      AI_GATEWAY_API_KEY: 'sk-gateway-key',
+      AI_GATEWAY_BASE_URL: 'https://gateway.ai.cloudflare.com/v1/123/my-gw/openai/',
+    });
+    const result = buildEnvVars(env);
+    expect(result.OPENAI_API_KEY).toBe('sk-gateway-key');
+    expect(result.AI_GATEWAY_BASE_URL).toBe('https://gateway.ai.cloudflare.com/v1/123/my-gw/openai');
+    expect(result.OPENAI_BASE_URL).toBe('https://gateway.ai.cloudflare.com/v1/123/my-gw/openai');
   });
 
   it('passes AI_GATEWAY_BASE_URL directly', () => {
@@ -76,6 +98,15 @@ describe('buildEnvVars', () => {
     });
     const result = buildEnvVars(env);
     expect(result.ANTHROPIC_API_KEY).toBe('direct-key');
+    expect(result.ANTHROPIC_BASE_URL).toBe('https://api.anthropic.com');
+  });
+
+  it('normalizes ANTHROPIC_BASE_URL when set directly', () => {
+    const env = createMockEnv({
+      ANTHROPIC_API_KEY: 'direct-key',
+      ANTHROPIC_BASE_URL: 'https://api.anthropic.com/',
+    });
+    const result = buildEnvVars(env);
     expect(result.ANTHROPIC_BASE_URL).toBe('https://api.anthropic.com');
   });
 
