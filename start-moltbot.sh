@@ -193,8 +193,15 @@ if (process.env.TELEGRAM_BOT_TOKEN) {
     config.channels.telegram = config.channels.telegram || {};
     config.channels.telegram.botToken = process.env.TELEGRAM_BOT_TOKEN;
     config.channels.telegram.enabled = true;
-    config.channels.telegram.dm = config.channels.telegram.dm || {};
+    // NOTE: Telegram schema uses top-level `dmPolicy`, NOT a nested `dm` object.
+    // If a previous run wrote `channels.telegram.dm`, remove it to satisfy strict validation.
+    if (config.channels.telegram.dm) {
+        delete config.channels.telegram.dm;
+    }
     config.channels.telegram.dmPolicy = process.env.TELEGRAM_DM_POLICY || 'pairing';
+} else if (config.channels.telegram?.dm) {
+    // Clean up invalid legacy key even when Telegram isn't configured via env vars.
+    delete config.channels.telegram.dm;
 }
 
 // Discord configuration
@@ -272,17 +279,50 @@ if (isOpenAI) {
 }
 
 // Browser profile configuration (Cloudflare Browser Rendering via CDP)
+// Moltbot expects browser.profiles.*.cdpUrl to be an HTTP(S) CDP endpoint (it will
+// discover and connect to the underlying WebSocket via /json/*).
 const normalizeUrl = (value) => (value || '').trim().replace(/\/+$/, '');
+const normalizeWorkerOrigin = (value) => {
+    let v = normalizeUrl(value);
+    if (!v) return '';
+    // If someone provides ws/wss, normalize to http/https for config validation.
+    if (/^wss?:\/\//.test(v)) v = v.replace(/^ws/, 'http');
+    // Allow values like "your-worker.workers.dev" (docs show https://...)
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(v)) v = `https://${v.replace(/^\/+/, '')}`;
+    try {
+        const u = new URL(v);
+        return `${u.protocol}//${u.host}`;
+    } catch {
+        return '';
+    }
+};
+
+const DEFAULT_CLOUDFLARE_BROWSER_COLOR = '#00AA00';
+
 if (process.env.CDP_SECRET && process.env.WORKER_URL) {
-    const workerUrl = normalizeUrl(process.env.WORKER_URL);
-    const cdpUrl = workerUrl.replace(/^https:/, 'wss:') + '/cdp?secret=' + encodeURIComponent(process.env.CDP_SECRET);
-    console.log('Configuring browser profile with CDP URL:', workerUrl + '/cdp?secret=***');
+    const workerOrigin = normalizeWorkerOrigin(process.env.WORKER_URL);
+    const cdpUrl = workerOrigin
+        ? workerOrigin + '/cdp?secret=' + encodeURIComponent(process.env.CDP_SECRET)
+        : '';
+    console.log('Configuring browser profile with CDP URL:', workerOrigin + '/cdp?secret=***');
     config.browser = config.browser || {};
+    config.browser.enabled = config.browser.enabled !== false;
     config.browser.profiles = config.browser.profiles || {};
-    config.browser.profiles.cloudflare = {
-        cdpUrl: cdpUrl
-    };
-    config.browser.defaultProfile = 'cloudflare';
+    if (cdpUrl) {
+        config.browser.profiles.cloudflare = { cdpUrl, color: DEFAULT_CLOUDFLARE_BROWSER_COLOR };
+        config.browser.defaultProfile = 'cloudflare';
+    } else {
+        console.log('Invalid WORKER_URL value; skipping browser profile configuration');
+    }
+}
+
+// Some versions require a per-profile `color` field; ensure it's present for our profile
+// to avoid strict config validation failures.
+if (config.browser?.profiles?.cloudflare && typeof config.browser.profiles.cloudflare === 'object') {
+    const profile = config.browser.profiles.cloudflare;
+    if (typeof profile.color !== 'string' || profile.color.trim() === '') {
+        profile.color = DEFAULT_CLOUDFLARE_BROWSER_COLOR;
+    }
 }
 
 // Write updated config
