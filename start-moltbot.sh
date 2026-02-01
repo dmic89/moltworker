@@ -105,6 +105,21 @@ if [ -d "$BACKUP_DIR/skills" ] && [ "$(ls -A $BACKUP_DIR/skills 2>/dev/null)" ];
     fi
 fi
 
+# Restore workspace symlinks for persistent memory (MEMORY.md, USER.md, memory/)
+WORKSPACE_DIR="/root/clawd"
+PERSISTENT_WORKSPACE="$BACKUP_DIR/workspace"
+if [ -d "$PERSISTENT_WORKSPACE" ]; then
+    echo "Setting up workspace symlinks to persistent storage..."
+    mkdir -p "$PERSISTENT_WORKSPACE/memory"
+    
+    # Create symlinks (force overwrite if exists)
+    [ -f "$PERSISTENT_WORKSPACE/MEMORY.md" ] && ln -sf "$PERSISTENT_WORKSPACE/MEMORY.md" "$WORKSPACE_DIR/MEMORY.md"
+    [ -f "$PERSISTENT_WORKSPACE/USER.md" ] && ln -sf "$PERSISTENT_WORKSPACE/USER.md" "$WORKSPACE_DIR/USER.md"
+    ln -sf "$PERSISTENT_WORKSPACE/memory" "$WORKSPACE_DIR/memory"
+    
+    echo "Workspace symlinks restored (MEMORY.md, USER.md, memory/)"
+fi
+
 # If config file still doesn't exist, create from template
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "No existing config found, initializing from template..."
