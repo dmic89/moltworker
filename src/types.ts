@@ -42,6 +42,8 @@ export interface MoltbotEnv {
   LINEAR_API_KEY?: string; // Linear API Key for GraphQL API
   // Brave Search API
   BRAVE_API_KEY?: string; // Brave Search API key for web search
+  // xAI/Grok API for X/Twitter research
+  XAI_API_KEY?: string; // xAI API key for Grok model and X post search
 }
 
 /**

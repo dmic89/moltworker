@@ -62,6 +62,7 @@ export function buildEnvVars(env: MoltbotEnv): Record<string, string> {
   if (env.GITHUB_TOKEN) envVars.GITHUB_TOKEN = env.GITHUB_TOKEN;
   if (env.LINEAR_API_KEY) envVars.LINEAR_API_KEY = env.LINEAR_API_KEY;
   if (env.BRAVE_API_KEY) envVars.BRAVE_API_KEY = env.BRAVE_API_KEY;
+  if (env.XAI_API_KEY) envVars.XAI_API_KEY = env.XAI_API_KEY;
 
   return envVars;
 }
