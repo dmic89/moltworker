@@ -11,3 +11,7 @@ memory/
 *.tmp
 *.bak
 repos/
+.DS_Store
+.wrangler/
+dist/
+node_modules/
