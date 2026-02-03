@@ -1,7 +1,0 @@
-name = "keepalive-worker"
-main = "src/index.ts"
-compatibility_date = "2024-01-01"
-
-# Ping every 5 minutes
-[triggers]
-crons = ["*/5 * * * *"]
